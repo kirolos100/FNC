@@ -1,0 +1,215 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>تحليل الصوت في الفيديو</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <style>
+        @font-face {
+            font-family: 'Noto Sans Arabic';
+            src: url('https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;700&display=swap');
+        }
+        
+        body {
+            font-family: 'Noto Sans Arabic', system-ui, -apple-system, sans-serif;
+        }
+        
+        .tab-active {
+            border-bottom: 2px solid #3b82f6;
+            color: #3b82f6;
+        }
+
+        #statusArea {
+            display: none;
+            margin-top: 20px;
+            padding: 15px;
+            border-radius: 8px;
+            background-color: #f0f9ff;
+        }
+        .status-message {
+            margin: 5px 0;
+            padding: 8px;
+            border-radius: 4px;
+        }
+        .status-pending {
+            background-color: #fef3c7;
+        }
+        .status-success {
+            background-color: #d1fae5;
+        }
+        .status-error {
+            background-color: #fee2e2;
+        }
+        .processing-spinner {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid #e5e7eb;
+            border-radius: 50%;
+            border-top-color: #3b82f6;
+            animation: spin 1s linear infinite;
+            margin-right: 8px;
+        }
+        @keyframes spin {
+            to {transform: rotate(360deg);}
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-8">تحليل الصوت في الفيديو</h1>
+        
+        {% if error %}
+        <div class="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded relative mb-4" role="alert">
+            <span class="block sm:inline">{{ error }}</span>
+        </div>
+        {% endif %}
+        
+        <!-- Tab Navigation -->
+        <div class="flex justify-center mb-6">
+            <button onclick="switchTab('upload')" id="uploadTab" class="px-4 py-2 mx-2 tab-active">
+                رفع فيديو جديد
+            </button>
+            <button onclick="switchTab('videoId')" id="videoIdTab" class="px-4 py-2 mx-2">
+                معالجة فيديو موجود
+            </button>
+        </div>
+        
+        <!-- Upload Form -->
+        <div id="uploadForm" class="bg-white rounded-lg shadow-md p-6 mb-4">
+            <form action="{{ url_for('upload_file') }}" method="post" enctype="multipart/form-data" class="space-y-4" onsubmit="return handleSubmit(event)">
+                <div class="flex flex-col">
+                    <label for="video" class="text-gray-700 text-sm font-bold mb-2">اختر ملف فيديو</label>
+                    <input type="file" name="video" id="video" accept=".mp4,.avi,.mov"
+                           class="border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <p class="text-sm text-gray-500 mt-1">الحد الأقصى لحجم الملف: 1GB</p>
+                </div>
+                <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">
+                    رفع وتحليل الفيديو
+                </button>
+            </form>
+        </div>
+        
+        <!-- Video ID Form -->
+        <div id="videoIdForm" class="bg-white rounded-lg shadow-md p-6 mb-4" style="display: none;">
+            <form action="{{ url_for('process_video_id') }}" method="post" class="space-y-4">
+                <div class="flex flex-col">
+                    <label for="video_id" class="text-gray-700 text-sm font-bold mb-2">معرف الفيديو</label>
+                    <input type="text" name="video_id" id="video_id" required
+                           placeholder="أدخل معرف الفيديو من Azure Video Indexer"
+                           class="border rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <button type="submit" class="w-full bg-blue-500 hover:bg-blue-600 text-white font-bold py-2 px-4 rounded">
+                    تحليل الفيديو
+                </button>
+            </form>
+        </div>
+
+        <!-- Status Area -->
+        <div id="statusArea" class="bg-white rounded-lg shadow-md p-6">
+            <h2 class="text-xl font-bold mb-4">حالة المعالجة</h2>
+            <div id="statusMessages"></div>
+        </div>
+    </div>
+    
+    <script>
+        function switchTab(tab) {
+            const uploadForm = document.getElementById('uploadForm');
+            const videoIdForm = document.getElementById('videoIdForm');
+            const uploadTab = document.getElementById('uploadTab');
+            const videoIdTab = document.getElementById('videoIdTab');
+            
+            if (tab === 'upload') {
+                uploadForm.style.display = 'block';
+                videoIdForm.style.display = 'none';
+                uploadTab.classList.add('tab-active');
+                videoIdTab.classList.remove('tab-active');
+            } else {
+                uploadForm.style.display = 'none';
+                videoIdForm.style.display = 'block';
+                uploadTab.classList.remove('tab-active');
+                videoIdTab.classList.add('tab-active');
+            }
+        }
+
+        function addStatusMessage(message, type = 'pending') {
+            const statusArea = document.getElementById('statusArea');
+            const statusMessages = document.getElementById('statusMessages');
+            const messageDiv = document.createElement('div');
+            messageDiv.className = `status-message status-${type}`;
+            
+            if (type === 'pending') {
+                messageDiv.innerHTML = `
+                    <div class="flex items-center">
+                        <div class="processing-spinner"></div>
+                        <span>${message}</span>
+                    </div>`;
+            } else {
+                messageDiv.textContent = message;
+            }
+            
+            statusMessages.appendChild(messageDiv);
+            statusArea.style.display = 'block';
+            window.scrollTo(0, document.body.scrollHeight);
+        }
+
+        let processingInterval;
+
+        async function checkProcessingStatus(videoId) {
+            try {
+                const response = await fetch(`/api/processing-status/${videoId}`);
+                const data = await response.json();
+                
+                if (data.status === 'completed') {
+                    clearInterval(processingInterval);
+                    addStatusMessage('اكتملت المعالجة بنجاح!', 'success');
+                    window.location.href = `/video/${videoId}`;
+                } else if (data.status === 'failed') {
+                    clearInterval(processingInterval);
+                    addStatusMessage('فشلت عملية المعالجة', 'error');
+                } else {
+                    addStatusMessage(data.message, 'pending');
+                }
+            } catch (error) {
+                console.error('Error checking status:', error);
+            }
+        }
+
+        async function handleSubmit(event) {
+            event.preventDefault();
+            const form = event.target;
+            const formData = new FormData(form);
+            
+            // Show status area and initial message
+            document.getElementById('statusArea').style.display = 'block';
+            addStatusMessage('جاري رفع الملف...', 'pending');
+            
+            try {
+                const response = await fetch(form.action, {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    addStatusMessage('تم رفع الملف بنجاح', 'success');
+                    addStatusMessage('جاري معالجة الفيديو...', 'pending');
+                    
+                    // Start checking processing status
+                    const videoId = data.video_id;
+                    processingInterval = setInterval(() => checkProcessingStatus(videoId), 5000);
+                } else {
+                    addStatusMessage(data.error || 'حدث خطأ أثناء رفع الملف', 'error');
+                }
+            } catch (error) {
+                addStatusMessage('حدث خطأ أثناء رفع الملف', 'error');
+                console.error('Error:', error);
+            }
+            
+            return false;
+        }
+    </script>
+</body>
+</html>

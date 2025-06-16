@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video Analysis Results</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.plyr.io/3.7.2/plyr.css" rel="stylesheet">
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .speaker-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        .speaker-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+        .speaker-name {
+            font-size: 1.5em;
+            color: #333;
+        }
+        .video-container {
+            margin-bottom: 20px;
+        }
+        video {
+            max-width: 100%;
+            border-radius: 4px;
+        }
+        .transcript {
+            background: #f9f9f9;
+            padding: 15px;
+            border-radius: 4px;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .segment {
+            margin-bottom: 10px;
+            padding: 8px;
+            border-bottom: 1px solid #eee;
+        }
+        .timestamp {
+            color: #666;
+            font-size: 0.9em;
+        }
+        .text {
+            margin-top: 5px;
+            color: #333;
+        }
+        .transcript-segment:hover {
+            background-color: #f3f4f6;
+            cursor: pointer;
+        }
+        .transcript-segment.active {
+            background-color: #e5e7eb;
+            border-left: 4px solid #3b82f6;
+        }
+        .plyr--video {
+            border-radius: 0.5rem;
+            overflow: hidden;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-3xl font-bold text-center mb-8 text-gray-800">Video Analysis Results</h1>
+        
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Speaker List -->
+            <div class="lg:col-span-1 bg-white rounded-lg shadow-md p-4">
+                <h2 class="text-xl font-semibold mb-4">Speakers</h2>
+                <div class="space-y-2">
+                    {% for speaker_id, speaker in speakers.items() %}
+                    <div class="speaker-item p-3 bg-gray-50 rounded hover:bg-gray-100 cursor-pointer"
+                         onclick="loadSpeakerVideo('{{ speaker_id }}')">
+                        <h3 class="font-medium">{{ speaker.name }}</h3>
+                        <p class="text-sm text-gray-600">{{ speaker.segments|length }} segments</p>
+                        <p class="text-sm text-gray-600">Duration: {{ speaker.total_duration }}</p>
+                    </div>
+                    {% endfor %}
+                </div>
+                
+                <!-- Add Transcript Link -->
+                <div class="mt-4">
+                    <a href="{{ url_for('view_transcript', video_id=video_id) }}" class="btn btn-primary w-full text-center py-2 rounded">
+                        View Full Transcript
+                    </a>
+                </div>
+            </div>
+
+            <!-- Video Player and Transcript -->
+            <div class="lg:col-span-2 space-y-6">
+                <!-- Video Player -->
+                <div class="bg-white rounded-lg shadow-md p-4">
+                    <video id="player" playsinline controls>
+                        <source src="" type="video/mp4">
+                    </video>
+                </div>
+
+                <!-- Transcript -->
+                <div class="bg-white rounded-lg shadow-md p-4">
+                    <h2 class="text-xl font-semibold mb-4">Transcript</h2>
+                    <div class="space-y-2">
+                        {% for speaker_id, speaker in speakers.items() %}
+                        <div class="speaker-transcript" id="transcript-{{ speaker_id }}">
+                            <h3 class="font-medium text-lg mb-2">{{ speaker.name }}</h3>
+                            {% for segment in speaker.segments %}
+                            <div class="transcript-segment p-2 rounded"
+                                 data-start="{{ segment.start }}"
+                                 data-end="{{ segment.end }}"
+                                 onclick="seekToTime('{{ segment.start }}')">
+                                <p class="text-gray-600 text-sm">{{ segment.start }} - {{ segment.end }}</p>
+                                <p class="text-gray-800">{{ segment.text }}</p>
+                            </div>
+                            {% endfor %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.plyr.io/3.7.2/plyr.js"></script>
+    <script>
+        const player = new Plyr('#player');
+        let currentSpeakerId = null;
+
+        function loadSpeakerVideo(speakerId) {
+            currentSpeakerId = speakerId;
+            const videoUrl = `/api/speaker_video/{{ video_id }}/${speakerId}`;
+            
+            // Update video source
+            player.source = {
+                type: 'video',
+                sources: [{
+                    src: videoUrl,
+                    type: 'video/mp4',
+                }]
+            };
+
+            // Hide all transcripts and show only the current speaker's
+            document.querySelectorAll('.speaker-transcript').forEach(el => {
+                el.style.display = 'none';
+            });
+            document.getElementById(`transcript-${speakerId}`).style.display = 'block';
+
+            // Highlight the selected speaker
+            document.querySelectorAll('.speaker-item').forEach(el => {
+                el.classList.remove('bg-blue-50');
+            });
+            event.currentTarget.classList.add('bg-blue-50');
+        }
+
+        function seekToTime(timeStr) {
+            const [hours, minutes, seconds] = timeStr.split(':').map(Number);
+            const totalSeconds = hours * 3600 + minutes * 60 + seconds;
+            player.currentTime = totalSeconds;
+            player.play();
+
+            // Highlight current segment
+            document.querySelectorAll('.transcript-segment').forEach(el => {
+                el.classList.remove('active');
+            });
+            event.currentTarget.classList.add('active');
+        }
+
+        // Update transcript highlighting based on current time
+        player.on('timeupdate', () => {
+            if (!currentSpeakerId) return;
+
+            const currentTime = player.currentTime;
+            const segments = document.querySelectorAll(`#transcript-${currentSpeakerId} .transcript-segment`);
+
+            segments.forEach(segment => {
+                const start = timeToSeconds(segment.dataset.start);
+                const end = timeToSeconds(segment.dataset.end);
+
+                if (currentTime >= start && currentTime <= end) {
+                    segment.classList.add('active');
+                    segment.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+                } else {
+                    segment.classList.remove('active');
+                }
+            });
+        });
+
+        function timeToSeconds(timeStr) {
+            const [hours, minutes, seconds] = timeStr.split(':').map(Number);
+            return hours * 3600 + minutes * 60 + seconds;
+        }
+
+        // Load the first speaker's video by default
+        window.addEventListener('load', () => {
+            const firstSpeaker = document.querySelector('.speaker-item');
+            if (firstSpeaker) {
+                firstSpeaker.click();
+            }
+        });
+    </script>
+</body>
+</html> 

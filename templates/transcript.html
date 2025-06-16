@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>نص الفيديو</title>
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link href="https://cdn.plyr.io/3.7.2/plyr.css" rel="stylesheet">
+    <style>
+        @font-face {
+            font-family: 'Noto Sans Arabic';
+            src: url('https://fonts.googleapis.com/css2?family=Noto+Sans+Arabic:wght@400;500;700&display=swap');
+        }
+        
+        body {
+            font-family: 'Noto Sans Arabic', system-ui, -apple-system, sans-serif;
+        }
+        
+        .transcript-segment:hover {
+            background-color: #f3f4f6;
+            cursor: pointer;
+        }
+        .transcript-segment.active {
+            background-color: #e5e7eb;
+            border-right: 4px solid #3b82f6;
+        }
+        
+        /* Sticky video player */
+        .video-container-wrapper {
+            position: sticky;
+            top: 1rem;
+            z-index: 10;
+        }
+        
+        .plyr--video {
+            border-radius: 0.5rem;
+            overflow: hidden;
+            direction: ltr !important;
+            background-color: black;
+        }
+        
+        #searchResults {
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        /* RTL specific styles */
+        .plyr {
+            direction: ltr !important;
+        }
+        .search-container {
+            direction: rtl;
+        }
+        
+        /* Arabic text specific styles */
+        .arabic-text {
+            font-size: 1.1em;
+            line-height: 1.6;
+            text-align: right;
+            font-family: 'Noto Sans Arabic', system-ui, -apple-system, sans-serif;
+        }
+        
+        /* Video container styles */
+        .video-container {
+            position: relative;
+            width: 100%;
+            background: #000;
+            overflow: hidden;
+            aspect-ratio: 16 / 9;
+        }
+        
+        .video-container video {
+            width: 100%;
+            height: 100%;
+            object-fit: contain;
+        }
+        
+        /* Prevent scroll jumping */
+        .scroll-disabled {
+            scroll-behavior: auto !important;
+        }
+    </style>
+</head>
+<body class="bg-gray-100 min-h-screen">
+    <div class="container mx-auto px-4 py-8">
+        <nav class="flex justify-between items-center mb-8">
+            <h1 class="text-3xl font-bold text-gray-800">نص الفيديو</h1>
+            <div class="space-x-4">
+                <a href="{{ url_for('index') }}" class="text-blue-500 hover:text-blue-600">الرئيسية</a>
+                <a href="{{ url_for('view_video', video_id=video_id) }}" class="text-blue-500 hover:text-blue-600">مقاطع المتحدثين</a>
+                <a href="{{ url_for('download_transcript', video_id=video_id) }}" 
+                   class="bg-green-500 hover:bg-green-600 text-white font-bold py-2 px-4 rounded">
+                    تحميل النص
+                </a>
+            </div>
+        </nav>
+
+        <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <!-- Video Player -->
+            <div class="lg:col-span-2">
+                <div class="video-container-wrapper">
+                    <div class="bg-white rounded-lg shadow-md p-4">
+                        <div class="video-container">
+                            <video id="player" playsinline controls crossorigin>
+                                <source src="{{ video_url }}" type="video/mp4">
+                                عذراً، متصفحك لا يدعم تشغيل الفيديو.
+                            </video>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Search Box -->
+            <div class="lg:col-span-1">
+                <div class="bg-white rounded-lg shadow-md p-4 mb-6 search-container">
+                    <input type="text" id="searchInput" 
+                           placeholder="بحث في النص..."
+                           class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    <div id="searchResults" class="mt-4"></div>
+                </div>
+            </div>
+
+            <!-- Full Transcript -->
+            <div class="lg:col-span-3">
+                <div class="bg-white rounded-lg shadow-md p-4">
+                    <div class="space-y-4" id="transcript-container">
+                        {% for segment in transcript %}
+                        <div class="transcript-segment p-3 rounded-lg" 
+                             data-start="{{ segment.start }}"
+                             data-end="{{ segment.end }}"
+                             onclick="seekToTime('{{ segment.start }}')">
+                            <div class="flex justify-between items-start mb-2">
+                                <span class="text-blue-600 font-medium">{{ segment.speaker_name }}</span>
+                                <span class="text-gray-500 text-sm" dir="ltr">{{ segment.start }} - {{ segment.end }}</span>
+                            </div>
+                            <p class="arabic-text text-gray-800">{{ segment.text }}</p>
+                        </div>
+                        {% endfor %}
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.plyr.io/3.7.2/plyr.polyfilled.js"></script>
+    <script>
+        // Initialize Plyr with specific options for Arabic content
+        const player = new Plyr('#player', {
+            controls: [
+                'play-large',
+                'play',
+                'progress',
+                'current-time',
+                'duration',
+                'mute',
+                'volume',
+                'fullscreen'
+            ],
+            i18n: {
+                play: 'تشغيل',
+                pause: 'إيقاف',
+                mute: 'كتم الصوت',
+                unmute: 'تشغيل الصوت',
+                enterFullscreen: 'دخول ملء الشاشة',
+                exitFullscreen: 'خروج من ملء الشاشة'
+            }
+        });
+
+        const searchInput = document.getElementById('searchInput');
+        const searchResults = document.getElementById('searchResults');
+        const transcriptSegments = document.querySelectorAll('.transcript-segment');
+        const transcriptContainer = document.getElementById('transcript-container');
+        const videoElement = document.getElementById('player');
+
+        function parseTime(timeStr) {
+            const parts = timeStr.split(':');
+            let hours = 0, minutes = 0, seconds = 0;
+            
+            if (parts.length === 3) {
+                hours = parseInt(parts[0]);
+                minutes = parseInt(parts[1]);
+                seconds = parseFloat(parts[2]);
+            } else if (parts.length === 2) {
+                minutes = parseInt(parts[0]);
+                seconds = parseFloat(parts[1]);
+            } else {
+                seconds = parseFloat(parts[0]);
+            }
+            
+            return hours * 3600 + minutes * 60 + seconds;
+        }
+
+        function seekToTime(timeStr) {
+            const seconds = parseTime(timeStr);
+            if (player) {
+                player.currentTime = seconds;
+                player.play().catch(error => {
+                    console.error('Error playing video:', error);
+                });
+            }
+        }
+
+        // Update transcript highlighting based on current time
+        let lastActiveSegment = null;
+        player.on('timeupdate', () => {
+            const currentTime = player.currentTime;
+            let activeSegment = null;
+            
+            transcriptSegments.forEach(segment => {
+                const start = parseTime(segment.dataset.start);
+                const end = parseTime(segment.dataset.end);
+
+                if (currentTime >= start && currentTime <= end) {
+                    segment.classList.add('active');
+                    activeSegment = segment;
+                } else {
+                    segment.classList.remove('active');
+                }
+            });
+
+            // Only scroll if the active segment has changed
+            if (activeSegment && activeSegment !== lastActiveSegment) {
+                // Temporarily disable smooth scrolling
+                transcriptContainer.classList.add('scroll-disabled');
+                
+                // Calculate scroll position to keep the active segment visible
+                const containerRect = transcriptContainer.getBoundingClientRect();
+                const segmentRect = activeSegment.getBoundingClientRect();
+                const isVisible = (
+                    segmentRect.top >= containerRect.top &&
+                    segmentRect.bottom <= containerRect.bottom
+                );
+                
+                if (!isVisible) {
+                    activeSegment.scrollIntoView({
+                        block: 'nearest',
+                        inline: 'nearest'
+                    });
+                }
+                
+                // Re-enable smooth scrolling
+                setTimeout(() => {
+                    transcriptContainer.classList.remove('scroll-disabled');
+                }, 100);
+                
+                lastActiveSegment = activeSegment;
+            }
+        });
+
+        // Search functionality
+        searchInput.addEventListener('input', () => {
+            const searchTerm = searchInput.value.trim();
+            const results = [];
+
+            if (searchTerm.length > 0) {
+                transcriptSegments.forEach(segment => {
+                    const text = segment.querySelector('.arabic-text').textContent;
+                    if (text.includes(searchTerm)) {
+                        results.push({
+                            text: text,
+                            time: segment.dataset.start,
+                            speaker: segment.querySelector('.text-blue-600').textContent
+                        });
+                    }
+                });
+            }
+
+            displaySearchResults(results);
+        });
+
+        function displaySearchResults(results) {
+            searchResults.innerHTML = results.map(result => `
+                <div class="p-2 hover:bg-gray-100 cursor-pointer" onclick="seekToTime('${result.time}')">
+                    <div class="text-sm text-gray-600">${result.speaker} - ${result.time}</div>
+                    <div class="arabic-text">${result.text}</div>
+                </div>
+            `).join('');
+        }
+
+        // Handle video loading errors
+        player.on('error', (error) => {
+            console.error('Video player error:', error);
+        });
+
+        // Ensure video is loaded
+        window.addEventListener('load', () => {
+            // Force reload the video source
+            const videoSource = videoElement.querySelector('source');
+            const currentSrc = videoSource.src;
+            videoSource.src = currentSrc;
+            videoElement.load();
+            
+            // Add event listener for video load error
+            videoElement.addEventListener('error', (e) => {
+                console.error('Video loading error:', e);
+            });
+        });
+
+        // Add debug logging for video loading
+        videoElement.addEventListener('loadeddata', () => {
+            console.log('Video data loaded successfully');
+        });
+
+        videoElement.addEventListener('canplay', () => {
+            console.log('Video can start playing');
+        });
+    </script>
+</body>
+</html> 
